@@ -17,7 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/nsx-operator/pkg/apis/v1alpha1"
 	"github.com/vmware-tanzu/nsx-operator/pkg/config"
-	commonctl "github.com/vmware-tanzu/nsx-operator/pkg/controllers/common"
+	// commonctl "github.com/vmware-tanzu/nsx-operator/pkg/controllers/common"
 	nsxserviceaccountcontroller "github.com/vmware-tanzu/nsx-operator/pkg/controllers/nsxserviceaccount"
 	securitypolicycontroller "github.com/vmware-tanzu/nsx-operator/pkg/controllers/securitypolicy"
 	"github.com/vmware-tanzu/nsx-operator/pkg/logger"
@@ -66,7 +66,7 @@ func StartSecurityPolicyController(mgr ctrl.Manager, commonService common.Servic
 		os.Exit(1)
 	} else {
 		securityReconcile.Service = securityService
-		commonctl.ServiceMediator.SecurityPolicyService = securityService
+		// commonctl.ServiceMediator.SecurityPolicyService = securityService
 	}
 	if err := securityReconcile.Start(mgr); err != nil {
 		log.Error(err, "failed to create controller", "controller", "SecurityPolicy")
@@ -114,7 +114,7 @@ func main() {
 	}
 
 	//  Embed the common commonService to sub-services.
-	var commonService = common.Service{
+	commonService := common.Service{
 		Client:    mgr.GetClient(),
 		NSXClient: nsxClient,
 		NSXConfig: cf,

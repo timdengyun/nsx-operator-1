@@ -9,7 +9,7 @@ import (
 
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/data"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/nsx-operator/pkg/apis/v1alpha1"
 	"github.com/vmware-tanzu/nsx-operator/pkg/nsx/services/common"
@@ -146,7 +146,7 @@ func (service *SecurityPolicyService) buildPolicyGroup(obj *v1alpha1.SecurityPol
 		return nil, "", err
 	}
 
-	policyGroupPath := service.buildPolicyGroupPath(obj)
+	policyGroupPath := service.buildAppliedGroupPath(obj, "")
 	return &policyGroup, policyGroupPath, nil
 }
 
@@ -313,8 +313,20 @@ func (service *SecurityPolicyService) buildPolicyGroupID(obj *v1alpha1.SecurityP
 	return fmt.Sprintf("sp_%s_scope", obj.UID)
 }
 
-func (service *SecurityPolicyService) buildPolicyGroupPath(obj *v1alpha1.SecurityPolicy) string {
-	return fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), service.buildPolicyGroupID(obj))
+func (service *SecurityPolicyService) buildAppliedGroupPath(obj *v1alpha1.SecurityPolicy, groupID string) string {
+	if getVpcEnable(service) {
+		if groupID == "" {
+			return fmt.Sprintf("/orgs/default/projects/%s/vpcs/%s/groups/%s", getVpcProject(obj.ObjectMeta.Namespace), getVpc(obj.ObjectMeta.Namespace),
+				service.buildPolicyGroupID(obj))
+		}
+		return fmt.Sprintf("/orgs/default/projects/%s/vpcs/%s/groups/%s", getVpcProject(obj.ObjectMeta.Namespace), getVpc(obj.ObjectMeta.Namespace), groupID)
+	}
+
+	if groupID == "" {
+		return fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), service.buildPolicyGroupID(obj))
+	} else {
+		return fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), groupID)
+	}
 }
 
 func (service *SecurityPolicyService) buildRuleAndGroups(obj *v1alpha1.SecurityPolicy, rule *v1alpha1.SecurityPolicyRule, ruleIdx int) ([]*model.Rule, []*model.Group, error) {
@@ -502,7 +514,7 @@ func (service *SecurityPolicyService) buildRuleAppliedGroupByPolicy(obj *v1alpha
 		// NSX-T manager will report error if all the rule's scope/src/dst are "ANY".
 		// So if the rule's scope is empty while policy's not, the rule's scope also
 		// will be set to the policy's scope to avoid this case.
-		nsxRuleAppliedGroupPath = service.buildPolicyGroupPath(obj)
+		nsxRuleAppliedGroupPath = service.buildAppliedGroupPath(obj, "")
 	} else {
 		nsxRuleAppliedGroupPath = "ANY"
 	}
@@ -519,7 +531,7 @@ func (service *SecurityPolicyService) buildRuleAppliedGroupByRule(obj *v1alpha1.
 		ruleAppliedGroupName = fmt.Sprintf("%s-%d-scope", obj.ObjectMeta.Name, idx)
 	}
 	targetTags := service.buildTargetTags(obj, &appliedTo, idx)
-	ruleAppliedGroupPath := fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), ruleAppliedGroupID)
+	ruleAppliedGroupPath := service.buildAppliedGroupPath(obj, ruleAppliedGroupID)
 	ruleAppliedGroup := model.Group{
 		Id:          &ruleAppliedGroupID,
 		DisplayName: &ruleAppliedGroupName,
@@ -564,6 +576,17 @@ func (service *SecurityPolicyService) buildRuleAppliedGroupByRule(obj *v1alpha1.
 	return &ruleAppliedGroup, ruleAppliedGroupPath, nil
 }
 
+func (service *SecurityPolicyService) buildRulePeerGroupPath(obj *v1alpha1.SecurityPolicy, groupID string, havingNsSelector bool) string {
+	if getVpcEnable(service) {
+		if havingNsSelector {
+			return fmt.Sprintf("/orgs/default/projects/%s/infra/domains/default/groups/%s", getVpcProject(obj.ObjectMeta.Namespace), groupID)
+		}
+		return fmt.Sprintf("/orgs/default/projects/%s/vpcs/%s/groups/%s", getVpcProject(obj.ObjectMeta.Namespace), getVpc(obj.ObjectMeta.Namespace), groupID)
+	}
+
+	return fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), groupID)
+}
+
 func (service *SecurityPolicyService) buildRuleSrcGroup(obj *v1alpha1.SecurityPolicy, rule *v1alpha1.SecurityPolicyRule, idx int) (*model.Group, string, error) {
 	var ruleSrcGroupName string
 	sources := rule.Sources
@@ -573,7 +596,16 @@ func (service *SecurityPolicyService) buildRuleSrcGroup(obj *v1alpha1.SecurityPo
 	} else {
 		ruleSrcGroupName = fmt.Sprintf("%s-%d-src", obj.ObjectMeta.Name, idx)
 	}
-	ruleSrcGroupPath := fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), ruleSrcGroupID)
+
+	havingNsSelector := false
+	for _, peer := range sources {
+		if peer.NamespaceSelector != nil {
+			havingNsSelector = true
+			break
+		}
+	}
+	ruleSrcGroupPath := service.buildRulePeerGroupPath(obj, ruleSrcGroupID, havingNsSelector)
+
 	peerTags := service.BuildPeerTags(obj, &sources, idx)
 	ruleSrcGroup := model.Group{
 		Id:          &ruleSrcGroupID,
@@ -591,6 +623,7 @@ func (service *SecurityPolicyService) buildRuleSrcGroup(obj *v1alpha1.SecurityPo
 			&peer,
 			&ruleSrcGroup,
 			i,
+			havingNsSelector,
 		)
 		if err == nil {
 			ruleSrcGroupCount += criteriaCount
@@ -629,7 +662,16 @@ func (service *SecurityPolicyService) buildRuleDstGroup(obj *v1alpha1.SecurityPo
 	} else {
 		ruleDstGroupName = fmt.Sprintf("%s-%d-dst", obj.ObjectMeta.Name, idx)
 	}
-	ruleDstGroupPath := fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), ruleDstGroupID)
+
+	havingNsSelector := false
+	for _, peer := range destinations {
+		if peer.NamespaceSelector != nil {
+			havingNsSelector = true
+			break
+		}
+	}
+	ruleDstGroupPath := service.buildRulePeerGroupPath(obj, ruleDstGroupID, havingNsSelector)
+
 	peerTags := service.BuildPeerTags(obj, &destinations, idx)
 	ruleDstGroup := model.Group{
 		Id:          &ruleDstGroupID,
@@ -647,6 +689,7 @@ func (service *SecurityPolicyService) buildRuleDstGroup(obj *v1alpha1.SecurityPo
 			&peer,
 			&ruleDstGroup,
 			i,
+			havingNsSelector,
 		)
 		if err == nil {
 			ruleDstGroupCount += criteriaCount
@@ -732,12 +775,16 @@ func (service *SecurityPolicyService) BuildPeerTags(obj *v1alpha1.SecurityPolicy
 func (service *SecurityPolicyService) updateTargetExpressions(obj *v1alpha1.SecurityPolicy, target *v1alpha1.SecurityPolicyTarget, group *model.Group, idx int) (int, int, error) {
 	var err error = nil
 	var tagValueExpression *data.StructValue = nil
-	memberType := "SegmentPort"
 	var matchLabels map[string]string
 	var matchExpressions *[]v1.LabelSelectorRequirement = nil
 	var mergedMatchExpressions *[]v1.LabelSelectorRequirement = nil
 	opInValueCount, totalCriteriaCount, totalExprCount := 0, 0, 0
 	matchLabelsCount, matchExpressionsCount := 0, 0
+
+	memberType, clusterMemberType := "SegmentPort", "Segment"
+	if getVpcEnable(service) {
+		memberType, clusterMemberType = "VpcSubnetPort", "VpcSubnet"
+	}
 
 	if target.PodSelector != nil && target.VMSelector != nil {
 		errorMsg := "PodSelector and VMSelector are not allowed to set in one group"
@@ -749,10 +796,13 @@ func (service *SecurityPolicyService) updateTargetExpressions(obj *v1alpha1.Secu
 	service.appendOperatorIfNeeded(&group.Expression, "OR")
 	expressions := service.buildGroupExpression(&group.Expression)
 
-	// Setting cluster member type to "Segment" for PodSelector and VMSelector ensure the criteria is mixed
-	// because the following conditions must have condition whose memberType=SegmentPort
+	// Setting cluster memberType to Segment for PodSelector and VMSelector ensure the criteria is mixed
+	// because the following conditions must have condition whose memberType is SegmentPort.
+	// In VPC network, cluster memberType to VpcSubnet because the following conditions must have
+	// condition whose memberType is VpcSubnetPort. Target group must be put under vpc level group path
+	// Segment and SegmentPort are not supported in vpc level group.
 	clusterExpression := service.buildExpression(
-		"Condition", "Segment",
+		"Condition", clusterMemberType,
 		fmt.Sprintf("%s|%s", common.TagScopeNCPCluster, getCluster(service)),
 		"Tag", "EQUALS", "EQUALS",
 	)
@@ -806,7 +856,7 @@ func (service *SecurityPolicyService) updateTargetExpressions(obj *v1alpha1.Secu
 			}
 		}
 
-		// Since cluster is set as default "Segment" memberType, So the final produced group criteria is always treated as a mixed criteria
+		// Since cluster memberType is set as default Segment or VpcSubnet, So the final produced group criteria is always treated as a mixed criteria
 		totalCriteriaCount, totalExprCount, err = service.validateSelectorExpressions(
 			matchLabelsCount,
 			matchExpressionsCount,
@@ -1142,17 +1192,18 @@ func (service *SecurityPolicyService) updateMixedExpressionsMatchExpression(nsMa
 	return err
 }
 
-func (service *SecurityPolicyService) updatePeerExpressions(obj *v1alpha1.SecurityPolicy, peer *v1alpha1.SecurityPolicyPeer, group *model.Group, idx int) (int, int, error) {
+func (service *SecurityPolicyService) updatePeerExpressions(obj *v1alpha1.SecurityPolicy, peer *v1alpha1.SecurityPolicyPeer, group *model.Group,
+	idx int, havingNsSelector bool) (int, int, error) {
 	var err error = nil
 	errorMsg := ""
 	var tagValueExpression *data.StructValue = nil
-	var memberType string
 	var matchLabels map[string]string
 	var matchExpressions *[]v1.LabelSelectorRequirement = nil
 	var mergedMatchExpressions *[]v1.LabelSelectorRequirement = nil
 	opInValueCount, totalCriteriaCount, totalExprCount := 0, 0, 0
 	matchLabelsCount, matchExpressionsCount := 0, 0
 	mixedNsSelector := false
+	isVpcEnable := getVpcEnable(service)
 
 	if len(peer.IPBlocks) > 0 {
 		addresses := data.NewListValue()
@@ -1188,14 +1239,24 @@ func (service *SecurityPolicyService) updatePeerExpressions(obj *v1alpha1.Securi
 	service.appendOperatorIfNeeded(&group.Expression, "OR")
 	expressions := service.buildGroupExpression(&group.Expression)
 
-	// Setting cluster member type to "Segment" for PodSelector and VMSelector ensure the criteria is mixed
-	// because the following conditions must have condition whose memberType=SegmentPort
+	// Setting cluster memberType to Segment for PodSelector and VMSelector ensure the criteria is mixed
+	// because the following conditions must have condition whose memberType is SegmentPort
 	clusterMemberType := "Segment"
-	// Setting cluster member type to "SegmentPort" for NamespaceSelector ensure the criteria is mixed
-	// because the following conditions must have condition whose memberType=Segment when NamespaceSelector isn't empty
+	// Setting cluster memberType to SegmentPort for NamespaceSelector only ensure the criteria is mixed
+	// because the following conditions must have condition whose memberType is Segment when NamespaceSelector isn't empty
 	if peer.PodSelector == nil && peer.VMSelector == nil && peer.NamespaceSelector != nil &&
 		peer.NamespaceSelector.Size() > 0 {
 		clusterMemberType = "SegmentPort"
+	}
+
+	memberType := "SegmentPort"
+	// In VPC network, cluster memberType must be set as VpcSubnet only if without NamespaceSelector.
+	// Also, memberType must be set as VpcSubnetPort in this case.
+	// Because peer group must be put under project level group path if NamespaceSelector is specified,
+	// VpcSubnet and VpcSubnetPort are not supported in project level group.
+	if isVpcEnable && !havingNsSelector {
+		clusterMemberType = "VpcSubnet"
+		memberType = "VpcSubnetPort"
 	}
 
 	clusterExpression := service.buildExpression(
@@ -1206,7 +1267,6 @@ func (service *SecurityPolicyService) updatePeerExpressions(obj *v1alpha1.Securi
 	expressions.Add(clusterExpression)
 
 	if peer.PodSelector != nil {
-		memberType = "SegmentPort"
 		service.addOperatorIfNeeded(expressions, "AND")
 		podExpression := service.buildExpression(
 			"Condition",
@@ -1236,7 +1296,6 @@ func (service *SecurityPolicyService) updatePeerExpressions(obj *v1alpha1.Securi
 		matchLabelsCount += ClusterTagCount + ProjectTagCount
 	}
 	if peer.VMSelector != nil {
-		memberType = "SegmentPort"
 		service.addOperatorIfNeeded(expressions, "AND")
 		vmExpression := service.buildExpression(
 			"Condition",
@@ -1372,7 +1431,7 @@ func (service *SecurityPolicyService) updatePeerExpressions(obj *v1alpha1.Securi
 			}
 		}
 
-		// Since cluster is set as "Segment" or "SegmentPort" memberType, So the final produced group criteria is always treated as a mixed criteria
+		// Since cluster memberType is set as "Segment" or "SegmentPort", So the final produced group criteria is always treated as a mixed criteria
 		totalCriteriaCount, totalExprCount, err = service.validateSelectorExpressions(
 			matchLabelsCount,
 			matchExpressionsCount,

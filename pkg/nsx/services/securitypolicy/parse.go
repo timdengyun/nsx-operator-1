@@ -44,3 +44,21 @@ func getCluster(service *SecurityPolicyService) string {
 func getDomain(service *SecurityPolicyService) string {
 	return getCluster(service)
 }
+
+func getVpcEnable(service *SecurityPolicyService) bool {
+	if service.NSXConfig.EnableVPCNetwork {
+		return true
+	} else {
+		return false
+	}
+}
+
+func getVpcProject(spNameSpace string) string {
+	// use namespace obj.ObjectMeta.Namespace to retrieve vpc project linked to SecurityPolicy
+	return "dy_project-1"
+}
+
+func getVpc(spNameSpace string) string {
+	// use namespace obj.ObjectMeta.Namespace to retrieve vpc project linked to SecurityPolicy
+	return "vpc-5"
+}

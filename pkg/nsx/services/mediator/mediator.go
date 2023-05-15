@@ -1,7 +1,7 @@
 package mediator
 
 import (
-	"github.com/vmware-tanzu/nsx-operator/pkg/nsx/services/securitypolicy"
+	//"github.com/vmware-tanzu/nsx-operator/pkg/nsx/services/securitypolicy"
 	"github.com/vmware-tanzu/nsx-operator/pkg/nsx/services/vpc"
 )
 
@@ -11,6 +11,6 @@ import (
 // In startCRDController function, we register the CRDService to the ServiceMediator, since only one controller writes to
 // its own store and other controllers read from the store, so we don't need lock here.
 type ServiceMediator struct {
-	*securitypolicy.SecurityPolicyService
+	//*securitypolicy.SecurityPolicyService
 	*vpc.VPCService
 }

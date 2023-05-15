@@ -124,11 +124,26 @@ func (service *SecurityPolicyService) CreateOrUpdateSecurityPolicy(obj *v1alpha1
 	// WrapHighLevelSecurityPolicy will modify the input security policy, so we need to make a copy for the following store update.
 	finalSecurityPolicyCopy := *finalSecurityPolicy
 	finalSecurityPolicyCopy.Rules = finalSecurityPolicy.Rules
-	infraSecurityPolicy, err := service.WrapHierarchySecurityPolicy(finalSecurityPolicy, finalGroups)
-	if err != nil {
-		return err
+
+	if getVpcEnable(service) {
+		projectId := getVpcProject(obj.ObjectMeta.Namespace)
+		vpcID := getVpc(obj.ObjectMeta.Namespace)
+		orgRoot, err := service.WrapHierarchyVpcSecurityPolicy(finalSecurityPolicy, finalGroups, "default", projectId, vpcID)
+		if err != nil {
+			log.Error(err, "WrapHierarchyVpcSecurityPolicy failed")
+			return err
+		}
+		if err = service.NSXClient.OrgRootClient.Patch(*orgRoot, &EnforceRevisionCheckParam); err != nil {
+			return err
+		}
+		// err = service.NSXClient.VPCInfraClient.Patch("default", projectId, *infraSecurityPolicy, &EnforceRevisionCheckParam)
+	} else {
+		infraSecurityPolicy, err := service.WrapHierarchySecurityPolicy(finalSecurityPolicy, finalGroups)
+		if err != nil {
+			return err
+		}
+		err = service.NSXClient.InfraClient.Patch(*infraSecurityPolicy, &EnforceRevisionCheckParam)
 	}
-	err = service.NSXClient.InfraClient.Patch(*infraSecurityPolicy, &EnforceRevisionCheckParam)
 	if err != nil {
 		return err
 	}
@@ -159,16 +174,23 @@ func (service *SecurityPolicyService) CreateOrUpdateSecurityPolicy(obj *v1alpha1
 
 func (service *SecurityPolicyService) DeleteSecurityPolicy(obj interface{}) error {
 	var nsxSecurityPolicy *model.SecurityPolicy
+	var spNameSpace string
+	var err error
 	g := make([]model.Group, 0)
 	nsxGroups := &g
 	switch sp := obj.(type) {
+	// This case is for normal SecurityPolicy deletion process, which means that SecurityPolicy
+	// has corresponding nsx SecurityPolicy object
 	case *v1alpha1.SecurityPolicy:
-		var err error
 		nsxSecurityPolicy, nsxGroups, err = service.buildSecurityPolicy(sp)
+		spNameSpace = sp.ObjectMeta.Namespace
 		if err != nil {
 			log.Error(err, "failed to build SecurityPolicy")
 			return err
 		}
+	// This case is for SecurityPolicy GC process, which means that SecurityPolicy
+	// doesn't exist in K8s any more but still has corresponding nsx SecurityPolicy object.
+	// Hence, we use SecurityPolicy's UID here from store instead of K8s SecurityPolicy object
 	case types.UID:
 		securityPolicies := service.securityPolicyStore.GetByIndex(common.TagScopeSecurityPolicyCRUID, string(sp))
 		if len(securityPolicies) == 0 {
@@ -176,6 +198,12 @@ func (service *SecurityPolicyService) DeleteSecurityPolicy(obj interface{}) erro
 			return nil
 		}
 		nsxSecurityPolicy = &securityPolicies[0]
+		// Get namespace of nsx SecurityPolicy from tags since there is no K8s SecurityPolicy object
+		for i := len(nsxSecurityPolicy.Tags) - 1; i >= 0; i-- {
+			if *nsxSecurityPolicy.Tags[i].Scope == common.TagScopeSecurityPolicyCRName {
+				spNameSpace = *nsxSecurityPolicy.Tags[i].Tag
+			}
+		}
 
 		groups := service.groupStore.GetByIndex(common.TagScopeSecurityPolicyCRUID, string(sp))
 		if len(groups) == 0 {
@@ -197,11 +225,26 @@ func (service *SecurityPolicyService) DeleteSecurityPolicy(obj interface{}) erro
 	// WrapHighLevelSecurityPolicy will modify the input security policy, so we need to make a copy for the following store update.
 	finalSecurityPolicyCopy := *nsxSecurityPolicy
 	finalSecurityPolicyCopy.Rules = nsxSecurityPolicy.Rules
-	infraSecurityPolicy, err := service.WrapHierarchySecurityPolicy(nsxSecurityPolicy, *nsxGroups)
-	if err != nil {
-		return err
+
+	if getVpcEnable(service) {
+		projectId := getVpcProject(spNameSpace)
+		vpcID := getVpc(spNameSpace)
+		orgRoot, err := service.WrapHierarchyVpcSecurityPolicy(nsxSecurityPolicy, *nsxGroups, "default", projectId, vpcID)
+		if err != nil {
+			log.Error(err, "WrapHierarchyVpcSecurityPolicy failed")
+			return err
+		}
+		if err = service.NSXClient.OrgRootClient.Patch(*orgRoot, &EnforceRevisionCheckParam); err != nil {
+			return err
+		}
+		// err = service.NSXClient.VPCInfraClient.Patch("default", projectId, *infraSecurityPolicy, &EnforceRevisionCheckParam)
+	} else {
+		infraSecurityPolicy, err := service.WrapHierarchySecurityPolicy(nsxSecurityPolicy, *nsxGroups)
+		if err != nil {
+			return err
+		}
+		err = service.NSXClient.InfraClient.Patch(*infraSecurityPolicy, &EnforceRevisionCheckParam)
 	}
-	err = service.NSXClient.InfraClient.Patch(*infraSecurityPolicy, &EnforceRevisionCheckParam)
 	if err != nil {
 		return err
 	}
@@ -221,10 +264,16 @@ func (service *SecurityPolicyService) DeleteSecurityPolicy(obj interface{}) erro
 	return nil
 }
 
-func (service *SecurityPolicyService) createOrUpdateGroups(nsxGroups []model.Group) error {
+func (service *SecurityPolicyService) createOrUpdateGroups(obj *v1alpha1.SecurityPolicy, nsxGroups []model.Group) error {
+	var err error
 	for _, group := range nsxGroups {
 		group.MarkedForDelete = nil
-		err := service.NSXClient.GroupClient.Patch(getDomain(service), *group.Id, group)
+		if getVpcEnable(service) {
+			projectId := getVpcProject(obj.ObjectMeta.Namespace)
+			err = service.NSXClient.VPCGroupClient.Patch("default", projectId, getDomain(service), *group.Id, group)
+		} else {
+			err = service.NSXClient.GroupClient.Patch(getDomain(service), *group.Id, group)
+		}
 		if err != nil {
 			return err
 		}

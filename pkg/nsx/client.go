@@ -18,6 +18,9 @@ import (
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/infra/domains"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/infra/domains/security_policies"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/infra/sites/enforcement_points"
+	vpc_projects "github.com/vmware/vsphere-automation-sdk-go/services/nsxt/orgs/projects"
+	vpc_domains "github.com/vmware/vsphere-automation-sdk-go/services/nsxt/orgs/projects/infra/domains"
+	vpc_sp "github.com/vmware/vsphere-automation-sdk-go/services/nsxt/orgs/projects/infra/domains/security_policies"
 	vpc_search "github.com/vmware/vsphere-automation-sdk-go/services/nsxt/orgs/projects/search"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/search"
 
@@ -34,25 +37,32 @@ type Client struct {
 	NsxConfig     *config.NSXOperatorConfig
 	RestConnector *client.RestConnector
 
-	QueryClient                search.QueryClient
-	VPCQueryClient             vpc_search.QueryClient
-	GroupClient                domains.GroupsClient
-	SecurityClient             domains.SecurityPoliciesClient
-	RuleClient                 security_policies.RulesClient
-	InfraClient                nsx_policy.InfraClient
-	ClusterControlPlanesClient enforcement_points.ClusterControlPlanesClient
+	QueryClient       search.QueryClient
+	GroupClient       domains.GroupsClient
+	SecurityClient    domains.SecurityPoliciesClient
+	RuleClient        security_policies.RulesClient
+	InfraClient       nsx_policy.InfraClient
+	OrgRootClient     nsx_policy.OrgRootClient
+	VPCQueryClient    vpc_search.QueryClient
+	VPCGroupClient    vpc_domains.GroupsClient
+	VPCSecurityClient vpc_domains.SecurityPoliciesClient
+	VPCRuleClient     vpc_sp.RulesClient
+	VPCInfraClient    vpc_projects.InfraClient
 
-	MPQueryClient             mpsearch.QueryClient
-	CertificatesClient        trust_management.CertificatesClient
-	PrincipalIdentitiesClient trust_management.PrincipalIdentitiesClient
-	WithCertificateClient     principal_identities.WithCertificateClient
+	ClusterControlPlanesClient enforcement_points.ClusterControlPlanesClient
+	MPQueryClient              mpsearch.QueryClient
+	CertificatesClient         trust_management.CertificatesClient
+	PrincipalIdentitiesClient  trust_management.PrincipalIdentitiesClient
+	WithCertificateClient      principal_identities.WithCertificateClient
 
 	NSXChecker    NSXHealthChecker
 	NSXVerChecker NSXVersionChecker
 }
 
-var nsx320Version = [3]int64{3, 2, 0}
-var nsx401Version = [3]int64{4, 0, 1}
+var (
+	nsx320Version = [3]int64{3, 2, 0}
+	nsx401Version = [3]int64{4, 0, 1}
+)
 
 type NSXHealthChecker struct {
 	cluster *Cluster
@@ -91,14 +101,8 @@ func GetClient(cf *config.NSXOperatorConfig) *Client {
 	securityClient := domains.NewSecurityPoliciesClient(restConnector(cluster))
 	ruleClient := security_policies.NewRulesClient(restConnector(cluster))
 	infraClient := nsx_policy.NewInfraClient(restConnector(cluster))
+	orgRootClient := nsx_policy.NewOrgRootClient(restConnector(cluster))
 	vpcQueryClient := vpc_search.NewQueryClient(restConnector(cluster))
-	clusterControlPlanesClient := enforcement_points.NewClusterControlPlanesClient(restConnector(cluster))
-
-	mpQueryClient := mpsearch.NewQueryClient(restConnector(cluster))
-	certificatesClient := trust_management.NewCertificatesClient(restConnector(cluster))
-	principalIdentitiesClient := trust_management.NewPrincipalIdentitiesClient(restConnector(cluster))
-	withCertificateClient := principal_identities.NewWithCertificateClient(restConnector(cluster))
-
 	nsxChecker := &NSXHealthChecker{
 		cluster: cluster,
 	}
@@ -115,17 +119,10 @@ func GetClient(cf *config.NSXOperatorConfig) *Client {
 		SecurityClient: securityClient,
 		RuleClient:     ruleClient,
 		InfraClient:    infraClient,
-
-		ClusterControlPlanesClient: clusterControlPlanesClient,
-
-		MPQueryClient:             mpQueryClient,
-		CertificatesClient:        certificatesClient,
-		PrincipalIdentitiesClient: principalIdentitiesClient,
-		WithCertificateClient:     withCertificateClient,
-
+		OrgRootClient:  orgRootClient,
+		VPCQueryClient: vpcQueryClient,
 		NSXChecker:     *nsxChecker,
 		NSXVerChecker:  *nsxVersionChecker,
-		VPCQueryClient: vpcQueryClient,
 	}
 	// NSX version check will be restarted during SecurityPolicy reconcile
 	// So, it's unnecessary to exit even if failed in the first time

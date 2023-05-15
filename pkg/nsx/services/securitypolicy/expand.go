@@ -61,14 +61,15 @@ func (service *SecurityPolicyService) expandRuleByPort(obj *v1alpha1.SecurityPol
 		}
 		startPort, err = service.resolveNamedPort(obj, rule, port)
 		if err != nil {
-			// Update the stale ip set group if stale ips exist
+			// In case there is no mor valid ip set selected to clear the stale ip set group in nsx if stale ips exist
 			if errors.As(err, &nsxutil.NoEffectiveOption{}) {
 				groups := service.groupStore.GetByIndex(common.TagScopeRuleID, service.buildRuleID(obj, ruleIdx))
 				var ipSetGroup model.Group
 				for _, group := range groups {
 					ipSetGroup = group
 					ipSetGroup.Expression = nil // clear the stale ips
-					err3 := service.createOrUpdateGroups([]model.Group{ipSetGroup})
+					// Clear ip set group in nsx
+					err3 := service.createOrUpdateGroups(obj, []model.Group{ipSetGroup})
 					if err3 != nil {
 						return nil, nil, err3
 					}
@@ -106,11 +107,24 @@ func (service *SecurityPolicyService) expandRuleByService(obj *v1alpha1.Security
 	// If portAddress contains a list of IPs, we should build an ip set group for the rule.
 	if len(portAddress.IPs) > 0 {
 		ruleIPSetGroup := service.buildRuleIPSetGroup(obj, rule, nsxRule, portAddress.IPs, ruleIdx)
-		groupPath := fmt.Sprintf(
-			"/infra/domains/%s/groups/%s",
-			getDomain(service),
-			*ruleIPSetGroup.Id,
-		)
+
+		//groupPath := fmt.Sprintf(
+		//	"/infra/domains/%s/groups/%s",
+		//	getDomain(service),
+		//	*ruleIPSetGroup.Id,
+		//)
+		ruleDirection, _ := getRuleDirection(rule)
+		havingNsSelector := false
+		if ruleDirection == "OUT" {
+			for _, peer := range rule.Destinations {
+				if peer.NamespaceSelector != nil {
+					havingNsSelector = true
+					break
+				}
+			}
+		}
+
+		groupPath := service.buildRulePeerGroupPath(obj, *ruleIPSetGroup.Id, havingNsSelector)
 		nsxRule.DestinationGroups = []string{groupPath}
 		log.V(2).Info("built ruleIPSetGroup", "ruleIPSetGroup", ruleIPSetGroup)
 		nsxGroups = append(nsxGroups, ruleIPSetGroup)

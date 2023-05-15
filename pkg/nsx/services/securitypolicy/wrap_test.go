@@ -14,8 +14,7 @@ import (
 	"github.com/vmware-tanzu/nsx-operator/pkg/nsx/services/common"
 )
 
-type fakeQueryClient struct {
-}
+type fakeQueryClient struct{}
 
 func (_ *fakeQueryClient) List(_ string, _ *string, _ *string, _ *int64, _ *bool, _ *string) (model.SearchResponse, error) {
 	cursor := "2"
@@ -191,7 +190,7 @@ func TestSecurityPolicyService_wrapResourceReference(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := service.wrapResourceReference(tt.args.children)
+			got, _ := service.wrapDomainResource(tt.args.children)
 			for _, v := range got {
 				r, _ := Converter.ConvertToGolang(v, model.ChildResourceReferenceBindingType())
 				rc := r.(model.ChildResourceReference)
