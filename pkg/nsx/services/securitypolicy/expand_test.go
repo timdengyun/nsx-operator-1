@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/data"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
-	v12 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	core_v1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -59,7 +59,7 @@ func TestSecurityPolicyService_buildRuleIPGroup(t *testing.T) {
 
 	var s *SecurityPolicyService
 	patches := gomonkey.ApplyMethod(reflect.TypeOf(s), "BuildPeerTags",
-		func(s *SecurityPolicyService, v *v1alpha1.SecurityPolicy, p *[]v1alpha1.SecurityPolicyPeer, i int) []model.Tag {
+		func(s *SecurityPolicyService, v *v1alpha1.SecurityPolicy, rule *v1alpha1.SecurityPolicyRule, i int, isSource bool) []model.Tag {
 			peerTags := []model.Tag{
 				{Scope: nil, Tag: nil},
 			}
@@ -179,9 +179,9 @@ func TestSecurityPolicyService_getPodSelectors(t *testing.T) {
 	labelSelector2, _ := v1.LabelSelectorAsSelector(podSelector2)
 	var s *SecurityPolicyService
 	patches := gomonkey.ApplyMethod(reflect.TypeOf(s), "ResolveNamespace",
-		func(s *SecurityPolicyService, _ *v1.LabelSelector) (*v12.NamespaceList, error) {
-			ns := v12.NamespaceList{
-				Items: []v12.Namespace{
+		func(s *SecurityPolicyService, _ *v1.LabelSelector) (*core_v1.NamespaceList, error) {
+			ns := core_v1.NamespaceList{
+				Items: []core_v1.Namespace{
 					{
 						TypeMeta: v1.TypeMeta{},
 						ObjectMeta: v1.ObjectMeta{
