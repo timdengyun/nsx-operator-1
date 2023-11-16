@@ -103,7 +103,7 @@ func (service *SecurityPolicyService) buildPolicyGroup(obj *v1alpha1.SecurityPol
 	policyGroup.DisplayName = String(fmt.Sprintf("%s-%s-scope", obj.ObjectMeta.Namespace, obj.ObjectMeta.Name))
 
 	appliedTo := obj.Spec.AppliedTo
-	targetTags := service.buildTargetTags(obj, &appliedTo, -1)
+	targetTags := service.buildTargetTags(obj, &appliedTo, nil, -1)
 	policyGroup.Tags = targetTags
 	if len(appliedTo) == 0 {
 		return nil, "ANY", nil
@@ -150,7 +150,9 @@ func (service *SecurityPolicyService) buildPolicyGroup(obj *v1alpha1.SecurityPol
 	return &policyGroup, policyGroupPath, nil
 }
 
-func (service *SecurityPolicyService) buildTargetTags(obj *v1alpha1.SecurityPolicy, targets *[]v1alpha1.SecurityPolicyTarget, idx int) []model.Tag {
+func (service *SecurityPolicyService) buildTargetTags(obj *v1alpha1.SecurityPolicy, targets *[]v1alpha1.SecurityPolicyTarget,
+	rule *v1alpha1.SecurityPolicyRule, idx int,
+) []model.Tag {
 	basicTags := service.buildBasicTags(obj)
 	sort.Slice(*targets, func(i, j int) bool {
 		k1, _ := json.Marshal((*targets)[i])
@@ -171,12 +173,12 @@ func (service *SecurityPolicyService) buildTargetTags(obj *v1alpha1.SecurityPoli
 	for _, tag := range basicTags {
 		targetTags = append(targetTags, tag)
 	}
-	if idx != -1 {
+	if idx != -1 && rule != nil {
 		// the appliedTo group belongs to a rule, so it needs a tag including the rule id
 		targetTags = append(targetTags,
 			model.Tag{
 				Scope: String(common.TagScopeRuleID),
-				Tag:   String(service.buildRuleID(obj, idx)),
+				Tag:   String(service.buildRuleID(obj, rule, idx)),
 			},
 		)
 	}
@@ -481,8 +483,9 @@ func (service *SecurityPolicyService) buildRuleOutGroup(obj *v1alpha1.SecurityPo
 	return nsxRuleDstGroup, nsxRuleSrcGroupPath, nsxRuleDstGroupPath, nil
 }
 
-func (service *SecurityPolicyService) buildRuleID(obj *v1alpha1.SecurityPolicy, idx int) string {
-	return fmt.Sprintf("sp_%s_%d", obj.UID, idx)
+func (service *SecurityPolicyService) buildRuleID(obj *v1alpha1.SecurityPolicy, rule *v1alpha1.SecurityPolicyRule, idx int) string {
+	serializedBytes, _ := json.Marshal(rule)
+	return fmt.Sprintf("sp_%s_%s_%d", obj.UID, util.Sha1(string(serializedBytes)), idx)
 }
 
 func (service *SecurityPolicyService) buildRuleName(obj *v1alpha1.SecurityPolicy, rule *v1alpha1.SecurityPolicyRule, idx int) string {
@@ -518,7 +521,7 @@ func (service *SecurityPolicyService) buildRuleAppliedGroupByRule(obj *v1alpha1.
 	} else {
 		ruleAppliedGroupName = fmt.Sprintf("%s-%d-scope", obj.ObjectMeta.Name, idx)
 	}
-	targetTags := service.buildTargetTags(obj, &appliedTo, idx)
+	targetTags := service.buildTargetTags(obj, &appliedTo, rule, idx)
 	ruleAppliedGroupPath := fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), ruleAppliedGroupID)
 	ruleAppliedGroup := model.Group{
 		Id:          &ruleAppliedGroupID,
@@ -574,7 +577,7 @@ func (service *SecurityPolicyService) buildRuleSrcGroup(obj *v1alpha1.SecurityPo
 		ruleSrcGroupName = fmt.Sprintf("%s-%d-src", obj.ObjectMeta.Name, idx)
 	}
 	ruleSrcGroupPath := fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), ruleSrcGroupID)
-	peerTags := service.BuildPeerTags(obj, &sources, idx)
+	peerTags := service.BuildPeerTags(obj, &sources, rule, idx)
 	ruleSrcGroup := model.Group{
 		Id:          &ruleSrcGroupID,
 		DisplayName: &ruleSrcGroupName,
@@ -630,7 +633,7 @@ func (service *SecurityPolicyService) buildRuleDstGroup(obj *v1alpha1.SecurityPo
 		ruleDstGroupName = fmt.Sprintf("%s-%d-dst", obj.ObjectMeta.Name, idx)
 	}
 	ruleDstGroupPath := fmt.Sprintf("/infra/domains/%s/groups/%s", getDomain(service), ruleDstGroupID)
-	peerTags := service.BuildPeerTags(obj, &destinations, idx)
+	peerTags := service.BuildPeerTags(obj, &destinations, rule, idx)
 	ruleDstGroup := model.Group{
 		Id:          &ruleDstGroupID,
 		DisplayName: &ruleDstGroupName,
@@ -688,7 +691,7 @@ func (service *SecurityPolicyService) buildRuleBasicInfo(obj *v1alpha1.SecurityP
 	}
 
 	nsxRule := model.Rule{
-		Id:             String(fmt.Sprintf("%s_%d_%d", service.buildRuleID(obj, ruleIdx), portIdx, portAddressIdx)),
+		Id:             String(fmt.Sprintf("%s_%d_%d", service.buildRuleID(obj, rule, ruleIdx), portIdx, portAddressIdx)),
 		DisplayName:    String(fmt.Sprintf("%s-%d-%d", service.buildRuleName(obj, rule, ruleIdx), portIdx, portAddressIdx)),
 		Direction:      &ruleDirection,
 		SequenceNumber: Int64(int64(ruleIdx)),
@@ -700,7 +703,9 @@ func (service *SecurityPolicyService) buildRuleBasicInfo(obj *v1alpha1.SecurityP
 	return &nsxRule, nil
 }
 
-func (service *SecurityPolicyService) BuildPeerTags(obj *v1alpha1.SecurityPolicy, peers *[]v1alpha1.SecurityPolicyPeer, idx int) []model.Tag {
+func (service *SecurityPolicyService) BuildPeerTags(obj *v1alpha1.SecurityPolicy, peers *[]v1alpha1.SecurityPolicyPeer,
+	rule *v1alpha1.SecurityPolicyRule, idx int,
+) []model.Tag {
 	basicTags := service.buildBasicTags(obj)
 	// TODO: abstract sort func for both peers and targets
 	sort.Slice(*peers, func(i, j int) bool {
@@ -716,7 +721,7 @@ func (service *SecurityPolicyService) BuildPeerTags(obj *v1alpha1.SecurityPolicy
 		},
 		{
 			Scope: String(common.TagScopeRuleID),
-			Tag:   String(service.buildRuleID(obj, idx)),
+			Tag:   String(service.buildRuleID(obj, rule, idx)),
 		},
 		{
 			Scope: String(common.TagScopeSelectorHash),

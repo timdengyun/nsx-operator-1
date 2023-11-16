@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/data"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
 	v12 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -59,7 +59,7 @@ func TestSecurityPolicyService_buildRuleIPGroup(t *testing.T) {
 
 	var s *SecurityPolicyService
 	patches := gomonkey.ApplyMethod(reflect.TypeOf(s), "BuildPeerTags",
-		func(s *SecurityPolicyService, v *v1alpha1.SecurityPolicy, p *[]v1alpha1.SecurityPolicyPeer, i int) []model.Tag {
+		func(s *SecurityPolicyService, v *v1alpha1.SecurityPolicy, p *[]v1alpha1.SecurityPolicyPeer, rule *v1alpha1.SecurityPolicyRule, i int) []model.Tag {
 			peerTags := []model.Tag{
 				{Scope: nil, Tag: nil},
 			}
