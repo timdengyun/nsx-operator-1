@@ -19,7 +19,9 @@ import (
 )
 
 const (
-	IndexByVPCPathFuncKey = "indexedByVPCPath"
+	IndexByVPCPathFuncKey           = "indexedByVPCPath"
+	SPIndexByUUIDAndRuleHashFuncKey = "SPIndexByUUIDRuleHash"
+	NPIndexByUUIDAndRuleHashFuncKey = "NPIndexByUUIDRuleHash"
 )
 
 var pageSize = int64(1000)

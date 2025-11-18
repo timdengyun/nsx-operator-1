@@ -2367,8 +2367,8 @@ func Test_createOrUpdateT1SecurityPolicy(t *testing.T) {
 	fakeService := fakeSecurityPolicyService()
 	fakeService.NSXConfig.EnableVPCNetwork = false
 
-	podSelectorRule0IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 0, common.ResourceTypeSecurityPolicy, nil)
-	podSelectorRule1IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 1, common.ResourceTypeSecurityPolicy, nil)
+	podSelectorRule0IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 0, "", nil)
+	podSelectorRule1IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 1, "", nil)
 
 	podSelectorRule0Name00, _ := fakeService.buildRuleDisplayName(&spWithPodSelector.Spec.Rules[0], common.ResourceTypeSecurityPolicy, nil)
 	podSelectorRule1Name00, _ := fakeService.buildRuleDisplayName(&spWithPodSelector.Spec.Rules[1], common.ResourceTypeSecurityPolicy, nil)
@@ -2518,8 +2518,8 @@ func Test_createOrUpdateVPCSecurityPolicy(t *testing.T) {
 	mockVPCService := mock.MockVPCServiceProvider{}
 	fakeService.vpcService = &mockVPCService
 
-	podSelectorRule0IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 0, common.ResourceTypeSecurityPolicy, nil)
-	podSelectorRule1IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 1, common.ResourceTypeSecurityPolicy, nil)
+	podSelectorRule0IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 0, "", nil)
+	podSelectorRule1IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 1, "", nil)
 
 	podSelectorRule0Name00, _ := fakeService.buildRuleDisplayName(&spWithPodSelector.Spec.Rules[0], common.ResourceTypeSecurityPolicy, nil)
 	podSelectorRule1Name00, _ := fakeService.buildRuleDisplayName(&spWithPodSelector.Spec.Rules[1], common.ResourceTypeSecurityPolicy, nil)
@@ -2689,8 +2689,8 @@ func Test_createOrUpdateVPCSecurityPolicyInDefaultProject(t *testing.T) {
 	mockVPCService := mock.MockVPCServiceProvider{}
 	fakeService.vpcService = &mockVPCService
 
-	podSelectorRule0IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 0, common.ResourceTypeSecurityPolicy, nil)
-	podSelectorRule1IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 1, common.ResourceTypeSecurityPolicy, nil)
+	podSelectorRule0IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 0, "", nil)
+	podSelectorRule1IDPort000 := fakeService.buildExpandedRuleID(&spWithPodSelector, 1, "", nil)
 
 	podSelectorRule0Name00, _ := fakeService.buildRuleDisplayName(&spWithPodSelector.Spec.Rules[0], common.ResourceTypeSecurityPolicy, nil)
 	podSelectorRule1Name00, _ := fakeService.buildRuleDisplayName(&spWithPodSelector.Spec.Rules[1], common.ResourceTypeSecurityPolicy, nil)

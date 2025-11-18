@@ -98,6 +98,56 @@ var filterRuleTag = func(v []model.Tag) []string {
 	return res
 }
 
+func filterRuleHash(tags []model.Tag, indexScope string) []string {
+	var res []string
+	var uid, hash string
+	for i := range tags {
+		t := tags[i]
+		if t.Scope == nil || t.Tag == nil {
+			continue
+		}
+		switch *t.Scope {
+		case indexScope:
+			uid = *t.Tag
+		case common.TagScopeRuleHash:
+			hash = *t.Tag
+		}
+		if uid != "" && hash != "" {
+			res = append(res, uid+":"+hash)
+			break
+		}
+	}
+	return res
+}
+
+func indexSPByUUIDAndRuleHash(obj interface{}) ([]string, error) {
+	switch o := obj.(type) {
+	case *model.Rule:
+		return filterRuleHash(o.Tags, common.TagValueScopeSecurityPolicyUID), nil
+	default:
+		return nil, errors.New("indexRuleHashFunc doesn't support unknown type")
+	}
+}
+
+func indexNPByUUIDAndRuleHash(obj interface{}) ([]string, error) {
+	switch o := obj.(type) {
+	case *model.Rule:
+		return filterRuleHash(o.Tags, common.TagScopeNetworkPolicyUID), nil
+	default:
+		return nil, errors.New("indexRuleHashFunc doesn't support unknown type")
+	}
+}
+
+func (ruleStore *RuleStore) GetByIndexUUIDAndHash(key string, uuid, hash string) []*model.Rule {
+	value := uuid + ":" + hash
+	rules := make([]*model.Rule, 0)
+	objs := ruleStore.ResourceStore.GetByIndex(key, value)
+	for _, rule := range objs {
+		rules = append(rules, rule.(*model.Rule))
+	}
+	return rules
+}
+
 // SecurityPolicyStore is a store for security policy
 type SecurityPolicyStore struct {
 	common.ResourceStore

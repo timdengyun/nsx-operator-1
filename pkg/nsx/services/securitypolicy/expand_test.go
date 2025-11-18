@@ -89,7 +89,7 @@ func TestSecurityPolicyService_buildRuleIPGroup(t *testing.T) {
 		DisplayName: &policyGroupName,
 		Expression:  []*data.StructValue{blockExpression},
 		// build ipset group tags from input securitypolicy and securitypolicy rule
-		Tags: service.buildPeerTags(sp, &sp.Spec.Rules[0], 0, false, VPCScopeGroup, common.ResourceTypeSecurityPolicy),
+		Tags: service.buildPeerTags(sp, &sp.Spec.Rules[0], "", false, VPCScopeGroup, common.ResourceTypeSecurityPolicy),
 	}
 
 	type args struct {
@@ -105,7 +105,7 @@ func TestSecurityPolicyService_buildRuleIPGroup(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, service.buildRuleIPSetGroup(sp, &sp.Spec.Rules[0], tt.args.obj, tt.args.ips, 0, common.ResourceTypeSecurityPolicy), "buildRuleIPSetGroup(%v, %v)",
+			assert.Equalf(t, tt.want, service.buildRuleIPSetGroup(sp, &sp.Spec.Rules[0], tt.args.obj, tt.args.ips, 0, "", common.ResourceTypeSecurityPolicy), "buildRuleIPSetGroup(%v, %v)",
 				tt.args.obj, tt.args.ips)
 		})
 	}
@@ -397,13 +397,14 @@ func Test_ExpandRule(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name       string
-		vpcEnabled bool
-		ruleIdx    int
-		createdFor string
-		expGroups  []*model.Group
-		expRules   []*model.Rule
-		expErr     string
+		name        string
+		vpcEnabled  bool
+		ruleIdx     int
+		ruleBasedID string
+		createdFor  string
+		expGroups   []*model.Group
+		expRules    []*model.Rule
+		expErr      string
 	}{
 		{
 			name:       "VPC: rule without and ports for NetworkPolicy",
@@ -556,7 +557,7 @@ func Test_ExpandRule(t *testing.T) {
 				vpcService: &mockVPCService,
 			}
 			rule := secPolicy.Spec.Rules[tc.ruleIdx]
-			nsxGroups, nsxRules, err := svc.expandRule(secPolicy, &rule, tc.ruleIdx, tc.createdFor, &VPCInfo[0])
+			nsxGroups, nsxRules, err := svc.expandRule(secPolicy, &rule, tc.ruleIdx, tc.ruleBasedID, tc.createdFor, &VPCInfo[0])
 			if tc.expErr != "" {
 				require.EqualError(t, err, tc.expErr)
 			} else {

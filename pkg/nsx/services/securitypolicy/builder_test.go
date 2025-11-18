@@ -568,7 +568,7 @@ func Test_BuildTargetTags(t *testing.T) {
 	common.TagValueScopeSecurityPolicyName = common.TagScopeSecurityPolicyCRName
 	common.TagValueScopeSecurityPolicyUID = common.TagScopeSecurityPolicyCRUID
 
-	ruleTagID0 := service.buildRuleID(&spWithPodSelector, 0)
+	ruleTagID0 := service.buildRuleID(&spWithPodSelector, 0, common.ResourceTypeSecurityPolicy)
 	tests := []struct {
 		name         string
 		inputPolicy  *v1alpha1.SecurityPolicy
@@ -647,24 +647,22 @@ func Test_BuildTargetTags(t *testing.T) {
 	defer patches.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleBaseID := service.buildRuleID(tt.inputPolicy, tt.inputIndex)
+			ruleBaseID := service.buildRuleID(tt.inputPolicy, tt.inputIndex, common.ResourceTypeSecurityPolicy)
 			assert.ElementsMatch(t, tt.expectedTags, service.buildTargetTags(tt.inputPolicy, tt.inputTargets, ruleBaseID, common.ResourceTypeSecurityPolicy))
 		})
 	}
 }
 
 func Test_BuildPeerTags(t *testing.T) {
-	ruleTagID0 := service.buildRuleID(&spWithPodSelector, 0)
+	ruleTagID0 := service.buildRuleID(&spWithPodSelector, 0, common.ResourceTypeSecurityPolicy)
 	tests := []struct {
 		name         string
 		inputPolicy  *v1alpha1.SecurityPolicy
-		inputIndex   int
 		expectedTags []model.Tag
 	}{
 		{
 			name:        "policy-src-peer-tags-with-pod-selector",
 			inputPolicy: &spWithPodSelector,
-			inputIndex:  0,
 			expectedTags: []model.Tag{
 				{
 					Scope: &tagScopeVersion,
@@ -715,7 +713,7 @@ func Test_BuildPeerTags(t *testing.T) {
 	defer patches.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.ElementsMatch(t, tt.expectedTags, service.buildPeerTags(tt.inputPolicy, &tt.inputPolicy.Spec.Rules[0], tt.inputIndex, true, VPCScopeGroup, common.ResourceTypeSecurityPolicy))
+			assert.ElementsMatch(t, tt.expectedTags, service.buildPeerTags(tt.inputPolicy, &tt.inputPolicy.Spec.Rules[0], ruleTagID0, true, VPCScopeGroup, common.ResourceTypeSecurityPolicy))
 		})
 	}
 }
@@ -1352,7 +1350,7 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 		inputSecurityPolicy *v1alpha1.SecurityPolicy
 		inputRule           *v1alpha1.SecurityPolicyRule
 		ruleIdx             int
-		createdFor          string
+		ruleBaseID          string
 		namedPort           *portInfo
 		expectedRuleID      string
 	}{
@@ -1362,7 +1360,6 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 			inputSecurityPolicy: &securityPolicyWithMultipleNormalPorts,
 			inputRule:           &securityPolicyWithMultipleNormalPorts.Spec.Rules[0],
 			ruleIdx:             0,
-			createdFor:          common.ResourceTypeSecurityPolicy,
 			namedPort:           nil,
 			expectedRuleID:      "spMulPorts_spMulPortsuidA_d0b8e36c_80_1234.1235",
 		},
@@ -1372,7 +1369,6 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 			inputSecurityPolicy: &securityPolicyWithMultipleNormalPorts,
 			inputRule:           &securityPolicyWithMultipleNormalPorts.Spec.Rules[0],
 			ruleIdx:             0,
-			createdFor:          common.ResourceTypeSecurityPolicy,
 			namedPort:           nil,
 			expectedRuleID:      "sp_spMulPortsuidA_d0b8e36cf858e76624b9706c3c8e77b6006c0e10_0_0_0",
 		},
@@ -1382,7 +1378,6 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 			inputSecurityPolicy: &securityPolicyWithMultipleNormalPorts,
 			inputRule:           &securityPolicyWithMultipleNormalPorts.Spec.Rules[1],
 			ruleIdx:             1,
-			createdFor:          common.ResourceTypeNetworkPolicy,
 			namedPort:           nil,
 			expectedRuleID:      "spMulPorts_spMulPortsuidA_555356be_88_1236.1237",
 		},
@@ -1392,7 +1387,6 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 			inputSecurityPolicy: &securityPolicyWithOneNamedPort,
 			inputRule:           &securityPolicyWithOneNamedPort.Spec.Rules[0],
 			ruleIdx:             0,
-			createdFor:          common.ResourceTypeSecurityPolicy,
 			namedPort:           newPortInfoForNamedPort(nsxutil.PortAddress{Port: 80}, "TCP"),
 			expectedRuleID:      "spNamedPorts_spNamedPortsuidA_3f7c7d8c_80",
 		},
@@ -1402,7 +1396,6 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 			inputSecurityPolicy: &securityPolicyWithOneNamedPort,
 			inputRule:           &securityPolicyWithOneNamedPort.Spec.Rules[0],
 			ruleIdx:             0,
-			createdFor:          common.ResourceTypeSecurityPolicy,
 			namedPort:           newPortInfoForNamedPort(nsxutil.PortAddress{Port: 80}, "TCP"),
 			expectedRuleID:      "sp_spNamedPortsuidA_3f7c7d8c8449687178002f23599add04bf0c3250_0_0_0",
 		},
@@ -1411,7 +1404,7 @@ func Test_BuildExpandedRuleID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc.NSXConfig.EnableVPCNetwork = tt.vpcEnabled
-			observedRuleID := svc.buildExpandedRuleID(tt.inputSecurityPolicy, tt.ruleIdx, tt.createdFor, tt.namedPort)
+			observedRuleID := svc.buildExpandedRuleID(tt.inputSecurityPolicy, tt.ruleIdx, tt.ruleBaseID, tt.namedPort)
 			assert.Equal(t, tt.expectedRuleID, observedRuleID)
 		})
 	}
@@ -1605,12 +1598,13 @@ func Test_BuildGroupName(t *testing.T) {
 
 	t.Run("build rule peer group name", func(t *testing.T) {
 		for _, tc := range []struct {
-			name      string
-			ruleIdx   int
-			isSource  bool
-			enableVPC bool
-			expName   string
-			expId     string
+			name        string
+			ruleIdx     int
+			ruleBasedID string
+			isSource    bool
+			enableVPC   bool
+			expName     string
+			expId       string
 		}{
 			{
 				name:      "src peer group for rule without user-defined name",
@@ -1665,7 +1659,7 @@ func Test_BuildGroupName(t *testing.T) {
 				svc.NSXConfig.EnableVPCNetwork = tc.enableVPC
 				dispName := svc.buildRulePeerGroupName(obj, tc.ruleIdx, tc.isSource)
 				assert.Equal(t, tc.expName, dispName)
-				groupID := svc.buildRulePeerGroupID(obj, tc.ruleIdx, tc.isSource, VPCScopeGroup)
+				groupID := svc.buildRulePeerGroupID(obj, tc.ruleIdx, tc.ruleBasedID, tc.isSource, VPCScopeGroup)
 				assert.Equal(t, tc.expId, groupID)
 			})
 		}
@@ -1673,11 +1667,12 @@ func Test_BuildGroupName(t *testing.T) {
 
 	t.Run("build applied group name", func(t *testing.T) {
 		for _, tc := range []struct {
-			name      string
-			ruleIdx   int
-			enableVPC bool
-			expName   string
-			expId     string
+			name        string
+			ruleIdx     int
+			ruleBasedID string
+			enableVPC   bool
+			expName     string
+			expId       string
 		}{
 			{
 				name:      "applied group for rule without user-defined name",
@@ -1724,7 +1719,7 @@ func Test_BuildGroupName(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				svc.NSXConfig.EnableVPCNetwork = tc.enableVPC
-				id, dispName := svc.buildAppliedGroupIDAndName(obj, tc.ruleIdx, common.ResourceTypeNetworkPolicy)
+				id, dispName := svc.buildAppliedGroupIDAndName(obj, tc.ruleIdx, tc.ruleBasedID, common.ResourceTypeNetworkPolicy)
 				assert.Equal(t, tc.expId, id)
 				assert.Equal(t, dispName, tc.expName)
 			})
@@ -2144,7 +2139,7 @@ func Test_getPeerGroupByRuleId(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			get := fakeService.getPeerGroupByRuleId(tt.args.ruleId, tt.args.isSource, tt.args.groupScope)
+			get := fakeService.getPeerGroupByRuleID(tt.args.ruleId, tt.args.isSource, tt.args.groupScope)
 			assert.Equal(t, tt.wantGroupId, *get.Id)
 		})
 	}
